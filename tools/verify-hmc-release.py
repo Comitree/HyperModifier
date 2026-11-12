@@ -9,15 +9,14 @@ import subprocess
 import tempfile
 
 
-def verify(apks, expectations=None):
+def verify(apks):
     root = pathlib.Path(__file__).resolve().parents[1]
     source = root / "app/src/main/java/com/aritxonly/myhypermodifier/runtime/HyperMusicCoverDexSymbols.java"
     checker = root / "tools/tests/HyperMusicCoverDexCompatibilityCheck.java"
     apk_source = root / "app/src/main/java/com/aritxonly/myhypermodifier/runtime/HyperMusicCoverApkSource.java"
     with tempfile.TemporaryDirectory(prefix="hmc-api-") as temp:
         subprocess.run(["javac", "-d", temp, str(source), str(apk_source), str(checker)], check=True)
-        options = [f"-Dhmc.expectedSymbols={expectations.resolve()}"] if expectations else []
-        subprocess.run(["java", *options, "-cp", temp,
+        subprocess.run(["java", "-cp", temp,
                         "com.aritxonly.myhypermodifier.HyperMusicCoverDexCompatibilityCheck",
                         *[str(apk.resolve()) for apk in apks]], check=True)
     for apk in apks:
@@ -27,9 +26,4 @@ def verify(apks, expectations=None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("apk", type=pathlib.Path, nargs="+")
-    parser.add_argument("--expectations", type=pathlib.Path,
-                        help="Pinned SHA-256 and semantic role fixture for exactly one APK")
-    args = parser.parse_args()
-    if args.expectations and len(args.apk) != 1:
-        parser.error("--expectations requires exactly one APK")
-    verify(args.apk, args.expectations)
+    verify(parser.parse_args().apk)

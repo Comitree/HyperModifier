@@ -34,8 +34,8 @@ public class HyperMusicCoverAdapterTest {
         q.a = false;
         assertFalse(adapter.bool(adapter.clockHeld));
         q.a = true;
-        assertEquals(2, adapter.fpAvoid.getInt());
-        assertTrue(adapter.hideFp.getBoolean());
+        assertEquals(2, adapter.fpAvoid.getInt(null));
+        assertTrue(adapter.hideFp.getBoolean(null));
         assertEquals(Float.valueOf(700f), adapter.holdY.get(null));
     }
     @Test public void missingOrChangedRetainedInterfaceIsRejected() {
@@ -69,62 +69,14 @@ public class HyperMusicCoverAdapterTest {
         RenamedHelper.p = .25f;
         assertEquals(.25f, adapter.progress(), 0f);
         RenamedHelper.p = .75f;
-        assertEquals(2, adapter.fpAvoid.getInt());
-        assertTrue(adapter.hideFp.getBoolean());
+        assertEquals(2, adapter.fpAvoid.getInt(null));
+        assertTrue(adapter.hideFp.getBoolean(null));
         assertEquals(RenamedHelper.class, adapter.applyHide.getDeclaringClass());
     }
     @Test public void resolvedFieldWithWrongTypeIsRejected() {
         HyperMusicCoverDexSymbols symbols = splitSymbols();
         symbols.members.put("progress", symbols.members.get("fpAvoid"));
         assertThrows(NoSuchFieldException.class, () -> new HyperMusicCoverAdapter(RetainedMain.class, symbols));
-    }
-    static class IntSetting { private volatile int v; private int fallback = 99; }
-    static class BoolSetting { private volatile boolean v; }
-    static class Settings {
-        static IntSetting a = new IntSetting();
-        static final BoolSetting b = new BoolSetting();
-    }
-    private static HyperMusicCoverDexSymbols settingSymbols() {
-        HyperMusicCoverDexSymbols s = splitSymbols();
-        s.members.put("fpAvoidEntry", new HyperMusicCoverDexSymbols.Member(descriptor(Settings.class), "a", descriptor(IntSetting.class)));
-        s.members.put("fpAvoid", new HyperMusicCoverDexSymbols.Member(descriptor(IntSetting.class), "v", "I"));
-        s.members.put("hideFpEntry", new HyperMusicCoverDexSymbols.Member(descriptor(Settings.class), "b", descriptor(BoolSetting.class)));
-        s.members.put("hideFp", new HyperMusicCoverDexSymbols.Member(descriptor(BoolSetting.class), "v", "Z"));
-        return s;
-    }
-    @Test public void settingsObjectsAreReadLiveWithoutChangingUserPreferences() throws Exception {
-        Settings.a = new IntSetting();
-        Settings.b.v = false;
-        HyperMusicCoverAdapter adapter = new HyperMusicCoverAdapter(RetainedMain.class, settingSymbols());
-        for (int mode = 0; mode <= 2; mode++) {
-            Settings.a.v = mode;
-            Settings.b.v = mode != 0;
-            assertEquals(mode, adapter.fpAvoid.getInt());
-            assertEquals(mode != 0, adapter.hideFp.getBoolean());
-            assertEquals(mode, Settings.a.v);
-            assertEquals(99, Settings.a.fallback);
-        }
-        // Cache reflection metadata, not a setting's current value or receiver.
-        Settings.a = new IntSetting();
-        Settings.b.v = false;
-        assertEquals(0, adapter.fpAvoid.getInt());
-        assertFalse(adapter.hideFp.getBoolean());
-    }
-    @Test public void settingDefaultCannotBeMistakenForLiveValue() {
-        HyperMusicCoverDexSymbols s = settingSymbols();
-        s.members.put("fpAvoid", new HyperMusicCoverDexSymbols.Member(descriptor(IntSetting.class), "fallback", "I"));
-        assertThrows(NoSuchFieldException.class, () -> new HyperMusicCoverAdapter(RetainedMain.class, s));
-    }
-    @Test public void mismatchedSettingObjectIsRejected() {
-        HyperMusicCoverDexSymbols s = settingSymbols();
-        s.members.put("fpAvoidEntry", s.members.get("hideFpEntry"));
-        assertThrows(NoSuchFieldException.class, () -> new HyperMusicCoverAdapter(RetainedMain.class, s));
-    }
-    @Test public void nullSettingObjectFailsWithoutGuessingAUserPreference() throws Exception {
-        HyperMusicCoverAdapter adapter = new HyperMusicCoverAdapter(RetainedMain.class, settingSymbols());
-        Settings.a = null;
-        try { assertThrows(IllegalAccessException.class, () -> adapter.fpAvoid.getInt()); }
-        finally { Settings.a = new IntSetting(); }
     }
     static class FodParent { private final Object mMiuiGxzwAnimationView = "native-view"; }
     static class FodChild extends FodParent { }

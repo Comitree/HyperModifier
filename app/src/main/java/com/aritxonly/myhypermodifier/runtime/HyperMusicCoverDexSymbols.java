@@ -76,8 +76,28 @@ final class HyperMusicCoverDexSymbols {
                 modes.addAll(method.fields(false, "I"));
         }
         modes.removeIf(m -> MAIN.equals(m.owner));
-        if (modes.isEmpty()) resolveSettingObjects(index, out);
-        else resolveStaticFingerprint(index, out, one(modes, "fingerprint avoidance"));
+        Member mode = one(modes, "fingerprint avoidance");
+        out.members.put("fpAvoid", mode);
+        Set<Member> hide = new LinkedHashSet<>();
+        for (Def method : index.methods(mode.owner)) {
+            boolean afterLogAnchor = false;
+            for (Use use : method.uses()) {
+                if (use.string != null && use.string.contains("fingerprint setting read early: hide=")) afterLogAnchor = true;
+                if (afterLogAnchor && use.op == 0x63 && mode.owner.equals(use.member.owner)) hide.add(use.member);
+            }
+        }
+        Member hidden = one(hide, "hide fingerprint flag");
+        out.members.put("hideFp", hidden);
+        Set<Member> apply = new LinkedHashSet<>(), forKeyguard = new LinkedHashSet<>();
+        for (Def method : index.methods(mode.owner)) {
+            if (!method.isStatic()) continue;
+            if ("(Ljava/lang/Object;)Z".equals(method.member.descriptor)) forKeyguard.add(method.member);
+            if ("()V".equals(method.member.descriptor) && method.fields(false, "Z").contains(hidden)
+                    && method.calls("()V").stream().anyMatch(m -> "Landroid/view/View;".equals(m.owner) && "invalidate".equals(m.name)))
+                apply.add(method.member);
+        }
+        out.members.put("applyHide", one(apply, "fingerprint redraw"));
+        out.members.put("fodForKeyguard", one(forKeyguard, "fingerprint keyguard scope"));
         Member raw = one(index.named(MAIN, "easeRaw", "()F").fields(false, "F"), "clock room raw");
         out.members.put("roomRaw", raw);
         Set<Member> room = new LinkedHashSet<>();
@@ -90,29 +110,9 @@ final class HyperMusicCoverDexSymbols {
         Def roomDef = index.definition(roomForRows);
         Set<Member> now = roomDef.calls("(F)F");
         now.removeIf(m -> !raw.owner.equals(m.owner));
-        if (now.size() > 1) {
-            // spreadClockY also takes/returns float; only roomForRowsNow writes the
-            // unobstructed flag which roomForRows uses to choose reset versus easing.
-            Set<Member> flags = roomDef.fields(false, "Z");
-            Set<Member> writers = new LinkedHashSet<>();
-            for (Member candidate : now)
-                if (!Collections.disjoint(index.definition(candidate).fields(true, "Z"), flags)) writers.add(candidate);
-            now = writers;
-        }
         out.members.put("roomForRowsNow", one(now, "roomForRowsNow"));
         Set<Member> floats = roomDef.fields(true, "F");
         floats.removeIf(m -> !raw.owner.equals(m.owner));
-        if (floats.size() != 3) {
-            // New builds also learn two spread endpoints. The extracted reset helper
-            // still writes exactly raw, shown, soft, in that order (R8 returns void).
-            Set<Member> resets = new LinkedHashSet<>();
-            for (Member call : roomDef.calls("(F)V")) {
-                if (!raw.owner.equals(call.owner)) continue;
-                Set<Member> writes = index.definition(call).fields(true, "F");
-                if (writes.size() == 3 && writes.contains(raw)) resets.add(call);
-            }
-            floats = index.definition(one(resets, "clock room reset")).fields(true, "F");
-        }
         if (floats.size() != 3 || !floats.contains(raw)) throw new IOException("Unknown HMC room easing layout");
         // The immediate/unobstructed branch writes raw then shown, and zeroes soft last.
         floats.remove(raw);
@@ -132,76 +132,6 @@ final class HyperMusicCoverDexSymbols {
         validate(index, out);
         return out;
     }
-    private static void resolveStaticFingerprint(Index index, HyperMusicCoverDexSymbols out, Member mode) throws IOException {
-        out.members.put("fpAvoid", mode);
-        Set<Member> hide = new LinkedHashSet<>();
-        for (Def method : index.methods(mode.owner)) {
-            boolean afterLogAnchor = false;
-            for (Use use : method.uses()) {
-                if (use.string != null && use.string.contains("fingerprint setting read early: hide=")) afterLogAnchor = true;
-                if (afterLogAnchor && use.op == 0x63 && mode.owner.equals(use.member.owner)) hide.add(use.member);
-            }
-        }
-        Member hidden = one(hide, "hide fingerprint flag");
-        out.members.put("hideFp", hidden);
-        Set<Member> apply = new LinkedHashSet<>(), forKeyguard = new LinkedHashSet<>();
-        for (Def method : index.methods(mode.owner)) {
-            if (!method.isStatic()) continue;
-            if ("(Ljava/lang/Object;)Z".equals(method.member.descriptor)) forKeyguard.add(method.member);
-            if ("()V".equals(method.member.descriptor) && method.fields(false, "Z").contains(hidden)
-                    && redrawsViews(method))
-                apply.add(method.member);
-        }
-        out.members.put("applyHide", one(apply, "fingerprint redraw"));
-        out.members.put("fodForKeyguard", one(forKeyguard, "fingerprint keyguard scope"));
-    }
-    private static boolean redrawsViews(Def method) {
-        return method.calls("()V").stream().anyMatch(m -> "Landroid/view/View;".equals(m.owner)
-                && ("invalidate".equals(m.name) || "postInvalidate".equals(m.name)));
-    }
-    /** Settings.Int/Bool replaced static primitives; R8 inlines get()/on() into iget. */
-    private static void resolveSettingObjects(Index index, HyperMusicCoverDexSymbols out) throws IOException {
-        Set<Member> modes = new LinkedHashSet<>();
-        for (Def method : index.methods(MAIN)) {
-            if (method.member.name.startsWith("lambda$static$")
-                    && method.strings().stream().anyMatch(s -> s.contains("notification bound mode=")))
-                modes.add(method.member);
-        }
-        resolveSettingRead(index.definition(one(modes, "notification setting reader")), out, "fpAvoid", "I", null);
-        String settings = out.get("fpAvoidEntry").owner;
-        Set<Member> scopes = new LinkedHashSet<>();
-        for (Def method : index.methods(null)) {
-            if (method.isStatic() && "(Ljava/lang/Object;)Z".equals(method.member.descriptor)
-                    && method.strings().contains("mDozing") && method.strings().contains("mKeyguardAuthen"))
-                scopes.add(method.member);
-        }
-        Member scope = one(scopes, "fingerprint keyguard scope");
-        out.members.put("fodForKeyguard", scope);
-        Set<Member> redraw = new LinkedHashSet<>();
-        for (Def method : index.methods(scope.owner)) {
-            if (method.isStatic() && "()V".equals(method.member.descriptor) && redrawsViews(method)
-                    && method.fields(false, null).stream().anyMatch(f -> settings.equals(f.owner)))
-                redraw.add(method.member);
-        }
-        Member apply = one(redraw, "fingerprint redraw");
-        out.members.put("applyHide", apply);
-        resolveSettingRead(index.definition(apply), out, "hideFp", "Z", settings);
-    }
-    private static void resolveSettingRead(Def method, HyperMusicCoverDexSymbols out,
-                                           String role, String type, String settings) throws IOException {
-        Set<Member> entries = new LinkedHashSet<>(), values = new LinkedHashSet<>();
-        for (Member entry : method.fields(false, null)) {
-            if (settings != null && !settings.equals(entry.owner)) continue;
-            for (Use use : method.uses()) {
-                if (use.op >= 0x52 && use.op <= 0x58 && entry.descriptor.equals(use.member.owner)
-                        && type.equals(use.member.descriptor)) {
-                    entries.add(entry); values.add(use.member);
-                }
-            }
-        }
-        out.members.put(role + "Entry", one(entries, role + " setting object"));
-        out.members.put(role, one(values, role + " setting value"));
-    }
     private static HyperMusicCoverDexSymbols legacy(Index index) throws IOException {
         HyperMusicCoverDexSymbols out = new HyperMusicCoverDexSymbols();
         for (String[] role : new String[][]{
@@ -215,12 +145,10 @@ final class HyperMusicCoverDexSymbols {
         validate(index, out); return out;
     }
     private static void validate(Index index, HyperMusicCoverDexSymbols symbols) throws IOException {
-        for (Map.Entry<String, Member> role : symbols.members.entrySet()) {
-            Member m = role.getValue();
+        for (Member m : symbols.members.values()) {
             if (m.descriptor.startsWith("(")) {
                 if (!index.definition(m).isStatic()) throw new IOException("HMC method not static: " + m);
-            } else if (symbols.members.containsKey(role.getKey() + "Entry")) index.requireInstanceValue(m);
-            else index.requireStaticField(m);
+            } else index.requireStaticField(m);
         }
         index.requireStaticField(new Member(MAIN, "sContainer", "Landroid/view/View;"));
         index.requireStaticField(new Member(MAIN, "sHoldY", "Ljava/lang/Float;"));
@@ -236,7 +164,7 @@ final class HyperMusicCoverDexSymbols {
         List<Def> methods(String owner) {
             List<Def> found = new ArrayList<>();
             for (Dex dex : dexes) for (int i = 0; i < dex.codes.length; i++)
-                if (dex.codes[i] > 0 && (owner == null || owner.equals(dex.methodOwner(i)))) found.add(new Def(dex, i));
+                if (dex.codes[i] > 0 && owner.equals(dex.methodOwner(i))) found.add(new Def(dex, i));
             return found;
         }
         Def named(String owner, String name, String proto) throws IOException { return definition(new Member(owner, name, proto)); }
@@ -254,13 +182,6 @@ final class HyperMusicCoverDexSymbols {
         boolean implementsType(String owner, String type) {
             for (Dex dex : dexes) if (dex.interfaces.getOrDefault(owner, Collections.emptySet()).contains(type)) return true;
             return false;
-        }
-        void requireInstanceValue(Member member) throws IOException {
-            for (Dex dex : dexes) for (int i = 0; i < dex.fieldFlags.length; i++) {
-                // Settings values are live volatile primitives, never the absent/default value.
-                if ((dex.fieldFlags[i] & (8 | 16 | 64)) == 64 && member.equals(dex.field(i))) return;
-            }
-            throw new IOException("Missing volatile HMC setting value " + member);
         }
     }
     private static final class Use {
@@ -372,7 +293,7 @@ final class HyperMusicCoverDexSymbols {
                     else if (word == 0x200) width = 2 + u16(at + 2) * 4;
                     else if (word == 0x300) width = 4 + (int) (((long) u16(at + 2) * data.getInt(at + 4) + 1) / 2);
                     else throw new IllegalArgumentException("Unknown DEX payload");
-                } else if (op >= 0x52 && op <= 0x6d) result.add(new Use(op, field(u16(at + 2)), null));
+                } else if (op >= 0x60 && op <= 0x6d) result.add(new Use(op, field(u16(at + 2)), null));
                 else if ((op >= 0x6e && op <= 0x72) || (op >= 0x74 && op <= 0x78)) result.add(new Use(op, method(u16(at + 2)), null));
                 else if (op == 0x1a || op == 0x1b) result.add(new Use(op, null, string(op == 0x1a ? u16(at + 2) : data.getInt(at + 2))));
                 if (width <= 0 || (long) at + width * 2L > end) throw new IllegalArgumentException("Invalid DEX instruction span");

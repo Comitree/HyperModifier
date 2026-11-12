@@ -14,8 +14,7 @@ final class HyperMusicCoverAdapter {
     private final Field progressField;
     private final java.util.Map<Class<?>, java.util.Optional<Field>> fodFields = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.Map<Integer, Boolean> ringResources = new java.util.concurrent.ConcurrentHashMap<>();
-    final Field container, holdY;
-    final HyperMusicCoverSetting fpAvoid, hideFp;
+    final Field container, holdY, fpAvoid, hideFp;
     HyperMusicCoverAdapter(Class<?> main) throws ReflectiveOperationException {
         this(main, HyperMusicCoverSymbols.cached(main));
     }
@@ -40,10 +39,8 @@ final class HyperMusicCoverAdapter {
                 : method(main, "fodForKeyguard", boolean.class, Object.class);
         container = field(main, "sContainer", View.class);
         holdY = field(main, "sHoldY", Float.class);
-        fpAvoid = split ? HyperMusicCoverSymbols.setting(main, symbols, "fpAvoid", int.class)
-                : new HyperMusicCoverSetting(null, field(main, "sFpAvoid", int.class), int.class);
-        hideFp = split ? HyperMusicCoverSymbols.setting(main, symbols, "hideFp", boolean.class)
-                : new HyperMusicCoverSetting(null, field(main, "sHideFp", boolean.class), boolean.class);
+        fpAvoid = split ? HyperMusicCoverSymbols.field(main, symbols, "fpAvoid", int.class) : field(main, "sFpAvoid", int.class);
+        hideFp = split ? HyperMusicCoverSymbols.field(main, symbols, "hideFp", boolean.class) : field(main, "sHideFp", boolean.class);
     }
     float progress() throws ReflectiveOperationException {
         return progressField != null ? progressField.getFloat(null) : ((Number) legacyProgress.invoke(null)).floatValue();

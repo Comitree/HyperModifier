@@ -42,7 +42,7 @@ final class HyperMusicCoverExtensions {
     static boolean expanded() { return expanded; }
     static boolean bound() { return adapter != null; }
     static int hmcAvoidance() {
-        try { return adapter == null ? 0 : adapter.fpAvoid.getInt(); }
+        try { return adapter == null ? 0 : adapter.fpAvoid.getInt(null); }
         catch (ReflectiveOperationException error) { return 0; }
     }
     static void install(XposedModule module, ClassLoader loader) {
@@ -274,7 +274,7 @@ final class HyperMusicCoverExtensions {
         }
     }
     private static void replayFrames() throws ReflectiveOperationException {
-        if (expanded || adapter.hideFp.getBoolean() || ModuleSettings.hideLockscreenFingerprintIcon) return;
+        if (expanded || adapter.hideFp.getBoolean(null) || ModuleSettings.hideLockscreenFingerprintIcon) return;
         for (Object instance : FRAMES.keySet().toArray()) {
             Integer resource = FRAMES.remove(instance);
             if (instance != null && resource != null
