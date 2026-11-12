@@ -51,6 +51,14 @@ final class HyperMusicCoverSymbols {
             throw new NoSuchFieldException("HMC " + role + " type changed");
         f.setAccessible(true); return f;
     }
+    static HyperMusicCoverSetting setting(Class<?> main, HyperMusicCoverDexSymbols symbols,
+                                          String role, Class<?> type) throws ReflectiveOperationException {
+        HyperMusicCoverDexSymbols.Member value = member(symbols, role);
+        HyperMusicCoverDexSymbols.Member entry = symbols.members.get(role + "Entry");
+        return new HyperMusicCoverSetting(entry == null ? null
+                : owner(main, entry).getDeclaredField(entry.name),
+                owner(main, value).getDeclaredField(value.name), type);
+    }
     private static Class<?> owner(Class<?> main, HyperMusicCoverDexSymbols.Member member) throws ClassNotFoundException {
         String descriptor = member.owner;
         if (!descriptor.startsWith("L") || !descriptor.endsWith(";")) throw new ClassNotFoundException(descriptor);
