@@ -20,10 +20,11 @@ final class HyperMusicCoverExtensions {
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static HyperMusicCoverAdapter adapter;
     private static HyperMusicCoverFontHeight font;
-    private static HyperMusicCoverNotificationFlow notifications;
+    private static volatile HyperMusicCoverNotificationFlow notifications;
     private static ClassLoader systemLoader;
     private static boolean attempted, refreshing, editor, goingAway;
     private static final java.util.concurrent.atomic.AtomicBoolean INSTALLED = new java.util.concurrent.atomic.AtomicBoolean();
+    private static final java.util.concurrent.atomic.AtomicBoolean NOTIFICATIONS_INSTALLED = new java.util.concurrent.atomic.AtomicBoolean();
     private static Integer shade;
     private static volatile boolean expanded;
     private static volatile View guarded;
@@ -42,17 +43,22 @@ final class HyperMusicCoverExtensions {
     static boolean expanded() { return expanded; }
     static boolean bound() { return adapter != null; }
     static int hmcAvoidance() {
-        try { return adapter == null ? 0 : adapter.fpAvoid.getInt(null); }
+        try { return adapter == null ? 0 : adapter.fpAvoid.getInt(); }
         catch (ReflectiveOperationException error) { return 0; }
+    }
+    /** Must precede SystemUI's first collection; adding inputs to a running combine is too late. */
+    static void installNotificationFlow(XposedModule module, ClassLoader loader) {
+        if (Build.VERSION.SDK_INT < 34 || !NOTIFICATIONS_INSTALLED.compareAndSet(false, true)) return;
+        try { notifications = new HyperMusicCoverNotificationFlow(module, loader); }
+        catch (ReflectiveOperationException | RuntimeException error) {
+            HookDiagnostics.failure("com.android.systemui", "HMC 展开通知下沉", error);
+        }
     }
     static void install(XposedModule module, ClassLoader loader) {
         if (Build.VERSION.SDK_INT < 34 || !INSTALLED.compareAndSet(false, true)) return;
         systemLoader = loader;
         HyperMusicCoverStackState.install(module, loader);
-        try { notifications = new HyperMusicCoverNotificationFlow(module, loader); }
-        catch (ReflectiveOperationException | RuntimeException error) {
-            HookDiagnostics.failure("com.android.systemui", "HMC 展开通知下沉", error);
-        }
+        installNotificationFlow(module, loader);
         sceneHook(module, loader, "com.android.keyguard.editor.KeyguardEditorHelper", "setEditorState", args -> {
             if (args.length > 0) editor = !"IDEL".equals(String.valueOf(args[0]));
         });
@@ -274,7 +280,7 @@ final class HyperMusicCoverExtensions {
         }
     }
     private static void replayFrames() throws ReflectiveOperationException {
-        if (expanded || adapter.hideFp.getBoolean(null) || ModuleSettings.hideLockscreenFingerprintIcon) return;
+        if (expanded || adapter.hideFp.getBoolean() || ModuleSettings.hideLockscreenFingerprintIcon) return;
         for (Object instance : FRAMES.keySet().toArray()) {
             Integer resource = FRAMES.remove(instance);
             if (instance != null && resource != null

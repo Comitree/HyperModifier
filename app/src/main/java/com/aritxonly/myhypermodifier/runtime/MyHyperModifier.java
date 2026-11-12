@@ -660,6 +660,9 @@ public final class MyHyperModifier extends XposedModule {
         if (classLoader == null || !EARLY_SYSTEM_UI_HOOKS_INSTALLED.compareAndSet(false, true)) return;
         installSafely(SYSTEM_UI, "插件加载器", () ->
                 pluginHooks().installSystemUiPluginLoaderFactoryHook(classLoader));
+        // This Flow starts collecting once during startup, before deferred hooks can run.
+        installSafely(SYSTEM_UI, "HMC 展开通知下沉", () ->
+                HyperMusicCoverExtensions.installNotificationFlow(this, classLoader));
         scheduleDeferredSystemUiHooks(classLoader);
     }
 
